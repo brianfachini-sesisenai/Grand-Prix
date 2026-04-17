@@ -35,10 +35,7 @@ const Metricas = () => {
       </div>
 
       {/* Base 50%: Dashboard de Métricas C-Level */}
-      <div 
-        className="h-1/2 w-full p-8 overflow-y-auto relative z-10 bg-slate-50/50 dark:bg-slate-900/50 [&::-webkit-scrollbar]:hidden"
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-      >
+      <div className="h-1/2 w-full p-8 relative z-10 bg-slate-50/50 dark:bg-slate-900/50 overflow-hidden flex flex-col">
          <div className="max-w-7xl mx-auto h-full flex flex-col">
             <div className="flex justify-between items-end mb-6 shrink-0">
                <div>

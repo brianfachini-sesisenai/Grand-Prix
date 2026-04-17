@@ -343,7 +343,7 @@ export const GraphProvider = ({ children }) => {
   };
 
   // Motor Core: Cálculo dinâmico do modelo matemático
-  const getSimulatedEdges = () => {
+  const simulatedEdges = React.useMemo(() => {
     let simulated = {};
     for (let fromNode in edges) {
       simulated[fromNode] = {};
@@ -364,9 +364,7 @@ export const GraphProvider = ({ children }) => {
       }
     }
     return simulated;
-  };
-
-  const simulatedEdges = getSimulatedEdges();
+  }, [edges, nodes, edgeStatuses]);
 
   // ----- INÍCIO DO SIMULADOR GLOBAL -----
   const isActive = Boolean(activeOrder && activeOrder.origem && activeOrder.destino);

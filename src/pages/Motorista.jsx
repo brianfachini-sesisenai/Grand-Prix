@@ -29,7 +29,7 @@ const Motorista = () => {
 
   if (!myVehicle) {
      return (
-       <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/95 z-50 text-white">
+       <div className="w-full min-h-[calc(100vh-64px)] flex-1 flex flex-col items-center justify-center bg-slate-900/95 z-50 text-white mt-16 relative">
           <svg className="w-16 h-16 text-slate-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
           <h2 className="text-2xl font-bold mb-2">Acesso Restrito</h2>
           <p className="text-slate-400 max-w-sm text-center">Aguardando atribuição de veículo pela central. Você precisa de uma Frota designada para receber viagens.</p>

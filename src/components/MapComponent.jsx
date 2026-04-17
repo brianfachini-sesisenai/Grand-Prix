@@ -138,7 +138,7 @@ const DraggableNodeMarker = ({ node, isGestor, isActive, isSelected, toggleSelec
 };
 
 const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = false, vehiclePos = null, overridePath = null, onMapMoveEnd = null }) => {
-  const { nodes, edges, originalEdges, edgeStatuses, updateEdgeStatus, addPendingAlert, updateNodePosition, activeNodeId, setActiveNodeId, selectedNodes, toggleNodeSelection, activeOrder, globalVehiclePos, splitEdge } = useGraph();
+  const { nodes, edges, originalEdges, edgeStatuses, updateEdgeStatus, addPendingAlert, updateNodePosition, activeNodeId, setActiveNodeId, selectedNodes, toggleNodeSelection, activeOrder, globalVehiclePos, splitEdge, activePath } = useGraph();
   const [selectedEdgeForReport, setSelectedEdgeForReport] = React.useState(null);
 
   const submitReport = (status) => {
@@ -176,8 +176,8 @@ const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = fals
 
   const shortestPathNodes = useMemo(() => {
     if (overridePath) return overridePath;
-    return dijkstra(edges, 'N1', 'N15');
-  }, [edges, overridePath]);
+    return (activeOrder && activePath) ? activePath : [];
+  }, [overridePath, activeOrder, activePath]);
 
   const pathCoordinates = shortestPathNodes.map(nodeId => {
     if(nodes[nodeId]) return [nodes[nodeId].lat, nodes[nodeId].lng];
@@ -250,6 +250,7 @@ const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = fals
                 weight={6}
                 opacity={isMotorista ? 0.9 : 0.6}
                 className="pointer-events-none"
+                interactive={false}
               />
               {/* O opcional do Motorista: Pintar a linha tracejada de fundo caso a rota tenha sumido, mas a verde fica grossa */}
            </>
