@@ -9,7 +9,7 @@ const Gestor = () => {
      nodes, originalEdges, addNode, updateNode, deleteNode, activeNodeId, setActiveNodeId, 
      selectedNodes, deleteMultipleNodes, pendingAlerts, updateEdgeStatus, rejectAlert, 
      edgeStatuses, removeEdgeEvent, tripHistory, auditLogs, simulationSpeed, setSimulationSpeed,
-     categories, setCategories, vehicles, setVehicles, operatorAlerts, ackOperatorAlert, importData
+     categories, setCategories, vehicles, setVehicles, operatorAlerts, ackOperatorAlert, importData, mapSettings, setMapSettings
   } = useGraph();
   
   const { users } = useAuth();
@@ -24,8 +24,9 @@ const Gestor = () => {
   const [isVehAccordionOpen, setIsVehAccordionOpen] = useState(true);
   const [isHistoryAccordionOpen, setIsHistoryAccordionOpen] = useState(false);
   const [isAuditAccordionOpen, setIsAuditAccordionOpen] = useState(false);
+  const [isConfigAccordionOpen, setIsConfigAccordionOpen] = useState(false);
   
-  const [newVehicle, setNewVehicle] = useState({ nome: '', modelo: '', categoriaId: '', motoristaAtribuidoId: '' });
+  const [newVehicle, setNewVehicle] = useState({ nome: '', modelo: '', categoriaId: '', motoristaAtribuidoId: '', homeBaseNodeId: '' });
   const [activeVehicleId, setActiveVehicleId] = useState(null);
   
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -126,10 +127,10 @@ const Gestor = () => {
            alert("Veículo atualizado com sucesso!");
         } else {
            const generatedId = `V${Math.floor(Math.random() * 1000)}`;
-           setVehicles(prev => [...prev, { ...newVehicle, id: generatedId }]);
+           setVehicles(prev => [...prev, { ...newVehicle, id: generatedId, lastNodeId: newVehicle.homeBaseNodeId || null, lastActiveTimestamp: null }]);
            alert("Veículo atribuído com sucesso!");
         }
-        setNewVehicle({ nome: '', modelo: '', categoriaId: '', motoristaAtribuidoId: '' });
+        setNewVehicle({ nome: '', modelo: '', categoriaId: '', motoristaAtribuidoId: '', homeBaseNodeId: '' });
      }
   };
   
@@ -598,12 +599,20 @@ const Gestor = () => {
                               </select>
                             </div>
                          </div>
+                         <div>
+                           <label className="text-xs text-slate-600 dark:text-gray-400 font-bold block mb-1">🏠 Ponto de Origem (Estacionamento)</label>
+                           <select className="w-full bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-white border border-slate-300 dark:border-slate-700 rounded p-2 text-sm focus:outline-none focus:border-indigo-500" value={newVehicle.homeBaseNodeId || ''} onChange={(e) => setNewVehicle({...newVehicle, homeBaseNodeId: e.target.value})}>
+                             <option value="">Nenhum (Sem base fixa)</option>
+                             {Object.values(nodes).filter(n => n.isPOI !== false).map(n => <option key={n.id} value={n.id}>{n.label} ({n.id})</option>)}
+                           </select>
+                           <p className="text-[9px] text-slate-400 mt-1">Veículo retorna aqui após 15min ocioso</p>
+                         </div>
                          <div className="flex space-x-2 mt-2">
                            <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded text-sm transition-colors uppercase">
                              {activeVehicleId ? 'Salvar Edição' : 'Cadastrar'}
                            </button>
                            {activeVehicleId && (
-                              <button type="button" onClick={() => { setActiveVehicleId(null); setNewVehicle({ nome: '', modelo: '', categoriaId: '', motoristaAtribuidoId: '' }); }} className="bg-slate-400 hover:bg-slate-500 text-white font-bold py-2 px-4 rounded text-sm transition-colors">X</button>
+                              <button type="button" onClick={() => { setActiveVehicleId(null); setNewVehicle({ nome: '', modelo: '', categoriaId: '', motoristaAtribuidoId: '', homeBaseNodeId: '' }); }} className="bg-slate-400 hover:bg-slate-500 text-white font-bold py-2 px-4 rounded text-sm transition-colors">X</button>
                            )}
                          </div>
                       </form>
@@ -621,11 +630,14 @@ const Gestor = () => {
                                   <p className="text-[9px] text-slate-400 dark:text-gray-500 uppercase">{categories.find(c => c.id === v.categoriaId)?.nome || 'Sem Categoria'}</p>
                                   <p className="text-[10px] text-slate-500 dark:text-gray-400 mt-1">
                                      Condutor: <strong className="text-slate-700 dark:text-slate-300">{users.find(u => u.matricula === v.motoristaAtribuidoId)?.nome || <span className="text-yellow-600 dark:text-yellow-400 italic">Vago</span>}</strong>
+                                   </p>
+                                   <p className="text-[10px] text-slate-500 dark:text-gray-400">
+                                      Base: <strong className="text-slate-700 dark:text-slate-300">{v.homeBaseNodeId ? (nodes[v.homeBaseNodeId]?.label || v.homeBaseNodeId) : <span className="text-yellow-600 dark:text-yellow-400 italic">Sem base</span>}</strong>
                                   </p>
                                </div>
                                <div className="flex flex-col space-y-2">
                                   <button onClick={() => { 
-                                     setNewVehicle({ nome: v.nome, modelo: v.modelo, categoriaId: v.categoriaId, motoristaAtribuidoId: v.motoristaAtribuidoId || '' });
+                                     setNewVehicle({ nome: v.nome, modelo: v.modelo, categoriaId: v.categoriaId, motoristaAtribuidoId: v.motoristaAtribuidoId || '', homeBaseNodeId: v.homeBaseNodeId || '' });
                                      setActiveVehicleId(v.id);
                                      setIsVehAccordionOpen(true);
                                   }} className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold uppercase hover:underline">Editar</button>
@@ -639,6 +651,48 @@ const Gestor = () => {
                </div>
             </div>
          </div>
+
+          {/* Accordion: Configurações de Visualização */}
+          <div 
+            className="p-4 border-b border-slate-200 dark:border-gray-600 flex justify-between items-center cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            onClick={() => setIsConfigAccordionOpen(!isConfigAccordionOpen)}
+          >
+            <div>
+              <h2 className="text-md font-bold mb-0.5 text-slate-800 dark:text-slate-100 flex items-center">🎛️ Configurações de Visualização</h2>
+            </div>
+            <svg className={`w-4 h-4 text-gray-400 transition-transform duration-300 ${isConfigAccordionOpen ? 'rotate-180' : 'rotate-0'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+          </div>
+          <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isConfigAccordionOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
+            <div className="p-6 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 flex flex-col space-y-4">
+               <div className="flex items-center justify-between cursor-pointer" onClick={() => setMapSettings(prev => ({...prev, showSubNodes: !prev.showSubNodes}))}>
+                  <div>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Exibir Sub-nós</span>
+                    <p className="text-[10px] text-slate-400">Waypoints de desenho da malha</p>
+                  </div>
+                  <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${mapSettings?.showSubNodes !== false ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform duration-200 ${mapSettings?.showSubNodes !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </div>
+               </div>
+               <div className="flex items-center justify-between cursor-pointer" onClick={() => setMapSettings(prev => ({...prev, showNodeLabels: !prev.showNodeLabels}))}>
+                  <div>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Exibir Nomes dos Nós</span>
+                    <p className="text-[10px] text-slate-400">Labels de texto sobre o mapa</p>
+                  </div>
+                  <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${mapSettings?.showNodeLabels !== false ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform duration-200 ${mapSettings?.showNodeLabels !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </div>
+               </div>
+               <div className="flex items-center justify-between cursor-pointer" onClick={() => setMapSettings(prev => ({...prev, showIdleVehicles: !prev.showIdleVehicles}))}>
+                  <div>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Exibir Veículos Inativos</span>
+                    <p className="text-[10px] text-slate-400">Frotas paradas na Home Base</p>
+                  </div>
+                  <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 ${mapSettings?.showIdleVehicles !== false ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform duration-200 ${mapSettings?.showIdleVehicles !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </div>
+               </div>
+            </div>
+          </div>
 
          {/* Accordion Extra: Telemetria e Simulação */}
          <div 

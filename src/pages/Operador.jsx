@@ -45,7 +45,7 @@ const Operador = () => {
      let minDistance = Infinity;
 
      availableNodes.forEach(v => {
-        const vNode = nodes[v.lastNodeId] || nodes['N1'];
+        const vNode = nodes[v.lastNodeId] || nodes[v.homeBaseNodeId] || Object.values(nodes)[0];
         if (vNode) {
            const dist = calculateDistance(vNode.lat, vNode.lng, destinoNode.lat, destinoNode.lng);
            if (dist < minDistance) {
@@ -136,7 +136,7 @@ const Operador = () => {
       let minDistance = Infinity;
       
       activeDrivers.forEach(v => {
-         const vNode = nodes[v.lastNodeId] || nodes['N1'] || Object.values(nodes)[0];
+         const vNode = nodes[v.lastNodeId] || nodes[v.homeBaseNodeId] || Object.values(nodes)[0];
          const dist = calculateDistance(vNode.lat, vNode.lng, destinoNode.lat, destinoNode.lng);
          if (dist < minDistance) {
             minDistance = dist;
@@ -146,7 +146,7 @@ const Operador = () => {
       
       if (!closestVehicle) return;
 
-      const vNodeData = nodes[closestVehicle.lastNodeId] || nodes['N1'];
+      const vNodeData = nodes[closestVehicle.lastNodeId] || nodes[closestVehicle.homeBaseNodeId] || Object.values(nodes)[0];
 
       setActiveOrder({ 
          origem: vNodeData.id, 

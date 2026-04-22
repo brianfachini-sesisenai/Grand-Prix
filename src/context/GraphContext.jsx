@@ -93,6 +93,16 @@ export const GraphProvider = ({ children }) => {
      return saved ? JSON.parse(saved) : [];
   });
 
+  // --- Configurações de Visualização do Mapa ---
+  const [mapSettings, setMapSettings] = useState(() => {
+    const saved = localStorage.getItem('tmpm_mapSettings');
+    return saved ? JSON.parse(saved) : {
+      showSubNodes: true,
+      showNodeLabels: true,
+      showIdleVehicles: true
+    };
+  });
+
   // --- UI State (Editor) ---
   const [activeNodeId, setActiveNodeId] = useState(null);
   const [selectedNodes, setSelectedNodes] = useState([]);
@@ -108,6 +118,32 @@ export const GraphProvider = ({ children }) => {
   useEffect(() => { localStorage.setItem('tmpm_driverStatuses', JSON.stringify(driverStatuses)); }, [driverStatuses]);
   useEffect(() => { localStorage.setItem('tmpm_tripHistory', JSON.stringify(tripHistory)); }, [tripHistory]);
   useEffect(() => { localStorage.setItem('tmpm_auditLogs', JSON.stringify(auditLogs)); }, [auditLogs]);
+  useEffect(() => { localStorage.setItem('tmpm_mapSettings', JSON.stringify(mapSettings)); }, [mapSettings]);
+
+  // --- Idle Reset: Teleporta veículos ociosos de volta ao Home Base ---
+  const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutos
+  useEffect(() => {
+    if (vehicles.length === 0) return;
+    const now = Date.now();
+    let changed = false;
+    const updated = vehicles.map(v => {
+      if (v.lastActiveTimestamp && v.homeBaseNodeId && v.lastNodeId !== v.homeBaseNodeId) {
+        const elapsed = now - v.lastActiveTimestamp;
+        if (elapsed > IDLE_TIMEOUT_MS) {
+          changed = true;
+          return { ...v, lastNodeId: v.homeBaseNodeId };
+        }
+      }
+      // Se o veículo não tem lastNodeId mas tem homeBase, usar homeBase
+      if (!v.lastNodeId && v.homeBaseNodeId) {
+        changed = true;
+        return { ...v, lastNodeId: v.homeBaseNodeId };
+      }
+      return v;
+    });
+    if (changed) setVehicles(updated);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Executa apenas no mount (carregamento/refresh)
 
   // --- Funções Auxiliares ---
   const addTripLog = (trip) => {
@@ -477,7 +513,7 @@ export const GraphProvider = ({ children }) => {
                  endTime: new Date().toLocaleTimeString('pt-BR')
              });
              if (activeOrder.assignedVehicleId) {
-                setVehicles(prev => prev.map(v => v.id === activeOrder.assignedVehicleId ? { ...v, lastNodeId: routeEnd } : v));
+                setVehicles(prev => prev.map(v => v.id === activeOrder.assignedVehicleId ? { ...v, lastNodeId: routeEnd, lastActiveTimestamp: Date.now() } : v));
              }
              lastTimeRef.current = null;
              tripStartTimeRef.current = null;
@@ -526,7 +562,9 @@ export const GraphProvider = ({ children }) => {
       categories, setCategories, vehicles, setVehicles,
       driverStatuses, updateDriverStatus,
       operatorAlerts, addOperatorAlert, ackOperatorAlert,
-      importData, simulationSpeed, setSimulationSpeed
+      importData, simulationSpeed, setSimulationSpeed,
+      mapSettings, setMapSettings,
+      IDLE_TIMEOUT_MS
     }}>
       {children}
     </GraphContext.Provider>

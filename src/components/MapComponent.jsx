@@ -116,21 +116,22 @@ const MapFlyTo = ({ position }) => {
 };
 
 // Câmera Inteligente — Segue o veículo suavemente com panTo
-// Auto-desativa ao detectar arrasto manual do utilizador
-const MapFollowVehicle = ({ position, followMode, onUserDrag }) => {
+// CONGELA quando o Popup do menu de contexto está aberto
+const MapFollowVehicle = ({ position, followMode, onUserDrag, frozen }) => {
    const map = useMap();
    useEffect(() => {
+      if (frozen) return; // TRAVA: Popup aberto = mapa estático
       if (followMode && position) {
          map.panTo(position, { animate: true, duration: 0.3 });
       }
-   }, [position, followMode, map]);
+   }, [position, followMode, map, frozen]);
    useMapEvents({
       dragstart: () => { if (onUserDrag) onUserDrag(); }
    });
    return null;
 };
 
-const DraggableNodeMarker = ({ node, isGestor, isActive, isSelected, toggleSelection, setActiveNodeId, updateNodePosition, getNodeIcon }) => {
+const DraggableNodeMarker = ({ node, isGestor, isActive, isSelected, toggleSelection, setActiveNodeId, updateNodePosition, getNodeIcon, showLabel = true }) => {
   const [position, setPosition] = React.useState({ lat: node.lat, lng: node.lng });
   
   React.useEffect(() => {
@@ -165,13 +166,15 @@ const DraggableNodeMarker = ({ node, isGestor, isActive, isSelected, toggleSelec
         }
       }}
     >
-      <Tooltip direction="top" opacity={1}>
-        <div className="font-bold text-sm">
-          {isActive ? '✏️ ' : ''}
-          {isSelected ? '🟠 ' : ''}
-          {node.label}
-        </div>
-      </Tooltip>
+      {showLabel && (
+        <Tooltip direction="top" opacity={1}>
+          <div className="font-bold text-sm">
+             {isActive ? '✏️ ' : ''}
+             {isSelected ? '🟠 ' : ''}
+             {node.label}
+          </div>
+        </Tooltip>
+      )}
     </Marker>
   );
 };
@@ -181,7 +184,7 @@ const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = fals
     nodes, edges, originalEdges, edgeStatuses, updateEdgeStatus, removeEdgeEvent, 
     addPendingAlert, updateNodePosition, activeNodeId, setActiveNodeId, 
     selectedNodes, toggleNodeSelection, activeOrder, globalVehiclePos, 
-    splitEdge, activePath, vehicles, nearestVehicleId 
+    splitEdge, activePath, vehicles, nearestVehicleId, mapSettings 
   } = useGraph();
   const [selectedEdgeForReport, setSelectedEdgeForReport] = React.useState(null);
   const [edgeContextMenu, setEdgeContextMenu] = React.useState(null);
@@ -261,6 +264,7 @@ const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = fals
              position={cameraFollowPos}
              followMode={followMode}
              onUserDrag={onFollowDisable}
+             frozen={!!edgeContextMenu || !!selectedEdgeForReport}
            />
         )}
         
@@ -270,7 +274,7 @@ const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = fals
              position={
                (() => {
                   const v = vehicles.find(vec => vec.id === nearestVehicleId);
-                  const node = v ? nodes[v.lastNodeId] || nodes['N1'] : null;
+                  const node = v ? nodes[v.lastNodeId] || nodes[v.homeBaseNodeId] || Object.values(nodes)[0] : null;
                   return node ? [node.lat, node.lng] : null;
                })()
              }
@@ -306,6 +310,7 @@ const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = fals
                  eventHandlers={{
                    click: (e) => {
                       if (isGestor) {
+                         if (onFollowDisable) onFollowDisable();
                          setEdgeContextMenu({ edgeId: line.id, lat: e.latlng.lat, lng: e.latlng.lng });
                       } else {
                          setSelectedEdgeForReport({ edgeId: line.id, lat: e.latlng.lat, lng: e.latlng.lng });
@@ -352,7 +357,7 @@ const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = fals
         )}
 
         {/* Visão de Gestor/Operador dos Nós e Pinos do Porto */}
-        {Object.values(nodes).map(node => (
+        {Object.values(nodes).filter(node => mapSettings?.showSubNodes !== false || node.isPOI !== false).map(node => (
            <DraggableNodeMarker 
               key={node.id}
               node={node}
@@ -363,6 +368,7 @@ const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = fals
               setActiveNodeId={setActiveNodeId}
               updateNodePosition={updateNodePosition}
               getNodeIcon={getNodeIcon}
+              showLabel={mapSettings?.showNodeLabels !== false}
            />
         ))}
 
@@ -378,8 +384,11 @@ const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = fals
         )}
 
         {/* Visão de Radar para o Operador (Frota Disponível) */}
-        {isOperador && vehicles.map(v => {
-           const vNode = nodes[v.lastNodeId] || nodes['N1'];
+        {isOperador && vehicles.filter(v => {
+            if (!mapSettings?.showIdleVehicles && v.homeBaseNodeId && v.lastNodeId === v.homeBaseNodeId) return false;
+            return true;
+         }).map(v => {
+           const vNode = nodes[v.lastNodeId] || nodes[v.homeBaseNodeId] || Object.values(nodes)[0];
            if (!vNode) return null;
            const isNearest = v.id === nearestVehicleId;
            return (
@@ -406,32 +415,37 @@ const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = fals
            );
         })}
 
-        {/* Menu de Contexto do Gestor (Leaflet Popup nativo) */}
-        {edgeContextMenu && (
-           <Popup
-              position={[edgeContextMenu.lat, edgeContextMenu.lng]}
-              eventHandlers={{ remove: () => setEdgeContextMenu(null) }}
-           >
-              <div className="min-w-[200px] -m-2">
-                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">📍 Via {edgeContextMenu.edgeId}</p>
-                 <div className="flex flex-col space-y-1">
-                    <button 
-                       onClick={() => { setSelectedEdgeForReport({ edgeId: edgeContextMenu.edgeId, lat: edgeContextMenu.lat, lng: edgeContextMenu.lng }); setEdgeContextMenu(null); }}
-                       className="w-full text-left px-3 py-2 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-bold transition-colors border border-amber-200"
-                    >⚠️ Reportar Ocorrência</button>
-                    <button 
-                       onClick={() => { splitEdge(edgeContextMenu.edgeId, edgeContextMenu.lat, edgeContextMenu.lng); setEdgeContextMenu(null); }}
-                       className="w-full text-left px-3 py-2 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition-colors border border-indigo-200"
-                    >➕ Inserir Novo Nó</button>
-                    <button 
-                       disabled
-                       className="w-full text-left px-3 py-2 rounded-lg bg-slate-50 text-slate-400 text-xs font-bold border border-slate-200 cursor-not-allowed opacity-60"
-                    >⚙️ Configurações da Via</button>
-                 </div>
-              </div>
-           </Popup>
-        )}
       </MapContainer>
+
+       {/* Menu de Contexto do Gestor — Overlay HTML Puro (sobrevive a re-renders) */}
+       {edgeContextMenu && (
+          <div className="fixed inset-0 z-[9998]" onClick={() => setEdgeContextMenu(null)}>
+             <div
+                className="absolute bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl p-3 min-w-[220px] z-[9999] animate-in"
+                style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
+                onClick={(e) => e.stopPropagation()}
+             >
+                <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-100 dark:border-slate-700">
+                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">📍 Via {edgeContextMenu.edgeId}</p>
+                   <button onClick={() => setEdgeContextMenu(null)} className="text-slate-400 hover:text-red-500 transition text-lg font-bold leading-none ml-3" title="Fechar">&times;</button>
+                </div>
+                <div className="flex flex-col space-y-1.5">
+                   <button
+                      onClick={() => { setSelectedEdgeForReport({ edgeId: edgeContextMenu.edgeId, lat: edgeContextMenu.lat, lng: edgeContextMenu.lng }); setEdgeContextMenu(null); }}
+                      className="w-full text-left px-3 py-2.5 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/30 dark:hover:bg-amber-800/50 text-amber-700 dark:text-amber-400 text-xs font-bold transition-colors border border-amber-200 dark:border-amber-700"
+                   >⚠️ Reportar Ocorrência</button>
+                   <button
+                      onClick={() => { splitEdge(edgeContextMenu.edgeId, edgeContextMenu.lat, edgeContextMenu.lng); setEdgeContextMenu(null); }}
+                      className="w-full text-left px-3 py-2.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:hover:bg-indigo-800/50 text-indigo-700 dark:text-indigo-400 text-xs font-bold transition-colors border border-indigo-200 dark:border-indigo-700"
+                   >➕ Inserir Novo Nó</button>
+                   <button
+                      disabled
+                      className="w-full text-left px-3 py-2.5 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-400 text-xs font-bold border border-slate-200 dark:border-slate-700 cursor-not-allowed opacity-60"
+                   >⚙️ Configurações da Via</button>
+                </div>
+             </div>
+          </div>
+       )}
 
       {/* Report Modal (Operador/Motorista — ou Gestor via Menu de Contexto) */}
       {selectedEdgeForReport && (
