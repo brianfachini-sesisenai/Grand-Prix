@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import MapComponent from '../components/MapComponent';
+import FollowCameraButton from '../components/FollowCameraButton';
 import { useGraph } from '../context/GraphContext';
 import { useAuth } from '../context/AuthContext';
 import { dijkstra } from '../utils/dijkstra';
 import { calculateDistance } from '../utils/haversine';
 
 const Operador = () => {
-  const { nodes, edges, setActiveOrder, activeOrder, eta, isMoving, categories, vehicles, addAuditLog, driverStatuses, addOperatorAlert } = useGraph();
+  const { nodes, edges, setActiveOrder, activeOrder, eta, isMoving, categories, vehicles, addAuditLog, driverStatuses, addOperatorAlert, setNearestVehicleId } = useGraph();
   const { currentUser } = useAuth();
   const [destino, setDestino] = useState('');
   const [tipoVeiculo, setTipoVeiculo] = useState('');
   const [motivo, setMotivo] = useState('');
   const [contingencyAlert, setContingencyAlert] = useState(null);
+  const [followMode, setFollowMode] = useState(true);
 
   const [destinoTab, setDestinoTab] = useState('lista'); // 'lista' | 'atual' | 'alfinete'
   const [mapCenter, setMapCenter] = useState(null);
@@ -21,6 +23,40 @@ const Operador = () => {
         setTipoVeiculo(categories[0].id);
      }
   }, [categories, tipoVeiculo]);
+
+  // LOGICA DE RADAR: Encontrar veículo mais próximo sempre que as seleções mudarem
+  useEffect(() => {
+     if (!destino || !tipoVeiculo) {
+        setNearestVehicleId(null);
+        return;
+     }
+
+     const destinoNode = nodes[destino];
+     if (!destinoNode) return;
+
+     const availableNodes = vehicles
+        .filter(v => v.categoriaId === tipoVeiculo)
+        .filter(v => {
+           const driverState = driverStatuses[v.motoristaAtribuidoId];
+           return !driverState || driverState === 'disponivel';
+        });
+
+     let winnerId = null;
+     let minDistance = Infinity;
+
+     availableNodes.forEach(v => {
+        const vNode = nodes[v.lastNodeId] || nodes['N1'];
+        if (vNode) {
+           const dist = calculateDistance(vNode.lat, vNode.lng, destinoNode.lat, destinoNode.lng);
+           if (dist < minDistance) {
+              minDistance = dist;
+              winnerId = v.id;
+           }
+        }
+     });
+
+     setNearestVehicleId(winnerId);
+  }, [destino, tipoVeiculo, vehicles, nodes, driverStatuses]);
 
   const poiOptions = Object.values(nodes).filter(n => n.isPOI !== false).map(n => (
     <option key={n.id} value={n.id}>{n.label} (Nó {n.id})</option>
@@ -130,7 +166,8 @@ const Operador = () => {
 
   return (
     <div className="h-full relative w-full pt-16 bg-slate-50 dark:bg-slate-900 overflow-hidden transition-colors">
-       <MapComponent isOperador={true} onMapMoveEnd={handleMapMoveEnd} />
+       <MapComponent isOperador={true} onMapMoveEnd={handleMapMoveEnd} followMode={followMode} onFollowDisable={() => setFollowMode(false)} />
+       <FollowCameraButton followMode={followMode} onToggle={() => setFollowMode(!followMode)} />
        
        {destinoTab === 'alfinete' && (
           <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[1000] pointer-events-none drop-shadow-2xl">

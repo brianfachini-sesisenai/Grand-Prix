@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, useMapEvents } from 'react-leaflet';
+import React, { useMemo, useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, Tooltip, useMapEvents, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useGraph } from '../context/GraphContext';
@@ -59,16 +59,29 @@ const truckIcons = {
   resgate: createTruckIcon('#ef4444') 
 };
 
+// Ícone do Radar Pulsante
+const pingIcon = new L.divIcon({
+  className: 'radar-ping-icon',
+  html: `
+    <div class="relative flex h-12 w-12 items-center justify-center">
+      <div class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></div>
+      <div class="relative inline-flex rounded-full h-4 w-4 bg-indigo-600 border-2 border-white shadow-lg"></div>
+    </div>
+  `,
+  iconSize: [48, 48],
+  iconAnchor: [24, 24],
+});
+
 const getDynamicTruckIcon = (tipo) => truckIcons[tipo] || truckIcons.munck;
 
 const getWarningIcon = (status) => {
    let color = status === 'interditado' || status === 'manutencao' ? '#ef4444' : '#f97316';
    let symbol = '';
    
-   if(status === 'ruim') symbol = '<path d="M12 8v4M12 15h.01" stroke="#fff" stroke-width="2" stroke-linecap="round"/>'; // !
-   else if(status === 'congestionado') symbol = '<path d="M9 10h6v3H9zm-2 4h10v2H7z" fill="#fff"/>'; // Two cars/blocks
-   else if(status === 'interditado') symbol = '<path d="M10 10l4 4M14 10l-4 4" stroke="#fff" stroke-width="2" stroke-linecap="round"/>'; // X
-   else if(status === 'manutencao') symbol = '<path d="M12 8l-3 7h6z" fill="#fff"/><path d="M10.2 12h3.6" stroke="#f97316" stroke-width="1"/>'; // Cone
+   if(status === 'ruim') symbol = '<path d="M12 8v4M12 15h.01" stroke="#fff" stroke-width="2" stroke-linecap="round"/>';
+   else if(status === 'congestionado') symbol = '<path d="M9 10h6v3H9zm-2 4h10v2H7z" fill="#fff"/>';
+   else if(status === 'interditado') symbol = '<path d="M10 10l4 4M14 10l-4 4" stroke="#fff" stroke-width="2" stroke-linecap="round"/>';
+   else if(status === 'manutencao') symbol = '<path d="M12 8l-3 7h6z" fill="#fff"/><path d="M10.2 12h3.6" stroke="#f97316" stroke-width="1"/>';
    
    const trianglePath = `<polygon points="12,2 2,21 22,21" fill="none" stroke="${color}" stroke-width="3" stroke-linejoin="round"/><polygon points="12,4 4,19 20,19" fill="${color}" stroke="none"/>`;
 
@@ -89,6 +102,32 @@ const MapEventsHandler = ({ onMapMoveEnd }) => {
      }
   });
   return null;
+};
+
+// Componente auxiliar para centralizar a câmera via FlyTo
+const MapFlyTo = ({ position }) => {
+   const map = useMap();
+   useEffect(() => {
+      if (position) {
+         map.flyTo(position, 16, { animate: true, duration: 1.5 });
+      }
+   }, [position, map]);
+   return null;
+};
+
+// Câmera Inteligente — Segue o veículo suavemente com panTo
+// Auto-desativa ao detectar arrasto manual do utilizador
+const MapFollowVehicle = ({ position, followMode, onUserDrag }) => {
+   const map = useMap();
+   useEffect(() => {
+      if (followMode && position) {
+         map.panTo(position, { animate: true, duration: 0.3 });
+      }
+   }, [position, followMode, map]);
+   useMapEvents({
+      dragstart: () => { if (onUserDrag) onUserDrag(); }
+   });
+   return null;
 };
 
 const DraggableNodeMarker = ({ node, isGestor, isActive, isSelected, toggleSelection, setActiveNodeId, updateNodePosition, getNodeIcon }) => {
@@ -137,15 +176,32 @@ const DraggableNodeMarker = ({ node, isGestor, isActive, isSelected, toggleSelec
   );
 };
 
-const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = false, vehiclePos = null, overridePath = null, onMapMoveEnd = null }) => {
-  const { nodes, edges, originalEdges, edgeStatuses, updateEdgeStatus, addPendingAlert, updateNodePosition, activeNodeId, setActiveNodeId, selectedNodes, toggleNodeSelection, activeOrder, globalVehiclePos, splitEdge, activePath } = useGraph();
+const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = false, vehiclePos = null, overridePath = null, onMapMoveEnd = null, followMode = false, onFollowDisable = null, followPosition = null }) => {
+  const { 
+    nodes, edges, originalEdges, edgeStatuses, updateEdgeStatus, removeEdgeEvent, 
+    addPendingAlert, updateNodePosition, activeNodeId, setActiveNodeId, 
+    selectedNodes, toggleNodeSelection, activeOrder, globalVehiclePos, 
+    splitEdge, activePath, vehicles, nearestVehicleId 
+  } = useGraph();
   const [selectedEdgeForReport, setSelectedEdgeForReport] = React.useState(null);
+  const [edgeContextMenu, setEdgeContextMenu] = React.useState(null);
 
   const submitReport = (status) => {
+     if(status === 'normal') {
+        setSelectedEdgeForReport(null);
+        return;
+     }
+     const reportSource = selectedEdgeForReport;
+     const payload = {
+        id: Date.now().toString() + Math.random().toString().slice(2,5),
+        type: status,
+        lat: reportSource.lat,
+        lng: reportSource.lng
+     };
      if(isGestor) {
-        updateEdgeStatus(selectedEdgeForReport, status);
+        updateEdgeStatus(reportSource.edgeId, payload);
      } else {
-        addPendingAlert({ edgeId: selectedEdgeForReport, status, reportedBy: isMotorista ? 'Motorista' : 'Operador' });
+        addPendingAlert({ edgeId: reportSource.edgeId, status, reportedBy: isMotorista ? 'Motorista' : 'Operador', lat: payload.lat, lng: payload.lng });
      }
      setSelectedEdgeForReport(null);
   };
@@ -166,7 +222,7 @@ const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = fals
           lines.push({ 
             id: edgeId, 
             positions: [fromCoords, toCoords],
-            status: edgeStatuses[edgeId] || 'normal'
+            statusObj: edgeStatuses[edgeId] || { events: [] }
           });
         }
       }
@@ -185,27 +241,59 @@ const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = fals
   }).filter(Boolean);
 
   const getNodeIcon = (node) => {
-    // Waypoints ficam com bolinha cinza a menos que estejam selecionados no gestor
     if (node.isPOI === false && node.id !== activeNodeId && !selectedNodes.includes(node.id)) return customWaypointIcon;
-    
     if (selectedNodes.includes(node.id)) return customSelectedNodeIcon;
     if (node.id === activeNodeId) return customActiveNodeIcon;
     return customNodeIcon;
   };
 
+  // Calcula a posição para o follow da câmera
+  const cameraFollowPos = followPosition || (globalVehiclePos ? [globalVehiclePos.lat, globalVehiclePos.lng] : null);
+
   return (
     <div className="w-full h-full relative z-0 transition-all duration-500">
       <MapContainer center={centerPosition} zoom={15} className="w-full h-full" zoomControl={false}>
         <MapEventsHandler onMapMoveEnd={onMapMoveEnd} />
+        
+        {/* Câmera Inteligente — Segue o veículo (qualquer perfil) */}
+        {cameraFollowPos && (
+           <MapFollowVehicle 
+             position={cameraFollowPos}
+             followMode={followMode}
+             onUserDrag={onFollowDisable}
+           />
+        )}
+        
+        {/* FlyTo automático para o radar do Operador */}
+        {nearestVehicleId && isOperador && (
+           <MapFlyTo 
+             position={
+               (() => {
+                  const v = vehicles.find(vec => vec.id === nearestVehicleId);
+                  const node = v ? nodes[v.lastNodeId] || nodes['N1'] : null;
+                  return node ? [node.lat, node.lng] : null;
+               })()
+             }
+           />
+        )}
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
         {graphPolylines.map(line => {
-           let strokeColor = '#64748b'; // normal
-           if (line.status === 'ruim' || line.status === 'congestionado') strokeColor = '#f97316';
-           else if (line.status === 'interditado' || line.status === 'manutencao') strokeColor = '#ef4444';
+           let strokeColor = '#64748b';
+           let hasBlock = false;
+           let hasBad = false;
+           
+           if (line.statusObj && line.statusObj.events) {
+              line.statusObj.events.forEach(ev => {
+                 if (ev.type === 'interditado' || ev.type === 'manutencao' || ev.type === 'bloqueio') hasBlock = true;
+                 if (ev.type === 'ruim' || ev.type === 'congestionado') hasBad = true;
+              });
+           }
+           if (hasBlock) strokeColor = '#ef4444';
+           else if (hasBad) strokeColor = '#f97316';
            
            return (
              <React.Fragment key={line.id}>
@@ -214,30 +302,38 @@ const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = fals
                  color={strokeColor} 
                  weight={isGestor ? 8 : 4} 
                  opacity={1}
-                 dashArray={line.status === 'normal' ? "5, 5" : null} 
+                 dashArray={(!hasBlock && !hasBad) ? "5, 5" : null} 
                  eventHandlers={{
-                   click: (e) => setSelectedEdgeForReport(line.id),
-                   dblclick: (e) => {
-                      e.originalEvent.stopPropagation();
+                   click: (e) => {
                       if (isGestor) {
-                         setSelectedEdgeForReport(null);
-                         splitEdge(line.id, e.latlng.lat, e.latlng.lng);
+                         setEdgeContextMenu({ edgeId: line.id, lat: e.latlng.lat, lng: e.latlng.lng });
+                      } else {
+                         setSelectedEdgeForReport({ edgeId: line.id, lat: e.latlng.lat, lng: e.latlng.lng });
                       }
                    }
                  }}
                  pathOptions={{ className: 'cursor-pointer transition-all' }}
                />
-               {line.status !== 'normal' && (
+               {line.statusObj && line.statusObj.events && line.statusObj.events.map(ev => (
                  <Marker 
-                   position={[(line.positions[0][0] + line.positions[1][0])/2, (line.positions[0][1] + line.positions[1][1])/2]} 
-                   icon={getWarningIcon(line.status)}
+                   key={ev.id}
+                   position={[ev.lat, ev.lng]} 
+                   icon={getWarningIcon(ev.type)}
                    zIndexOffset={500}
+                   eventHandlers={{
+                      click: (e) => {
+                         L.DomEvent.stopPropagation(e);
+                         if(isGestor && window.confirm("Remover esta ocorrência?")) {
+                            removeEdgeEvent(line.id, ev.id);
+                         }
+                      }
+                   }}
                  >
                     <Tooltip direction="top" opacity={1}>
-                      <div className="font-bold text-xs capitalize">{line.status}</div>
+                      <div className="font-bold text-xs capitalize">Clique para Limpar: {ev.type}</div>
                     </Tooltip>
                  </Marker>
-               )}
+               ))}
              </React.Fragment>
            );
         })}
@@ -252,7 +348,6 @@ const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = fals
                 className="pointer-events-none"
                 interactive={false}
               />
-              {/* O opcional do Motorista: Pintar a linha tracejada de fundo caso a rota tenha sumido, mas a verde fica grossa */}
            </>
         )}
 
@@ -271,7 +366,7 @@ const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = fals
            />
         ))}
 
-        {/* Marcador Dinâmico e Flutuante do Caminhão - Renderiza para Gestores, Operadores e Motoristas se houver globalVehiclePos atuando na simulação global */}
+        {/* Marcador Dinâmico e Flutuante do Caminhão - Ativo na Viagem */}
         {(vehiclePos || globalVehiclePos) && activeOrder && (
            <Marker position={[(vehiclePos || globalVehiclePos).lat, (vehiclePos || globalVehiclePos).lng]} icon={getDynamicTruckIcon(activeOrder.tipoVeiculo)} zIndexOffset={9999}>
               <Popup autoPan={false}>
@@ -281,16 +376,71 @@ const MapComponent = ({ isGestor = false, isMotorista = false, isOperador = fals
               </Popup>
            </Marker>
         )}
+
+        {/* Visão de Radar para o Operador (Frota Disponível) */}
+        {isOperador && vehicles.map(v => {
+           const vNode = nodes[v.lastNodeId] || nodes['N1'];
+           if (!vNode) return null;
+           const isNearest = v.id === nearestVehicleId;
+           return (
+              <React.Fragment key={v.id}>
+                 {isNearest && (
+                   <Marker position={[vNode.lat, vNode.lng]} icon={pingIcon} zIndexOffset={9997} interactive={false} />
+                 )}
+                 <Marker 
+                    position={[vNode.lat, vNode.lng]} 
+                    icon={getDynamicTruckIcon(v.categoriaId)}
+                    opacity={isNearest ? 1 : 0.6}
+                    zIndexOffset={isNearest ? 9998 : 9000}
+                 >
+                    <Popup>
+                       <div className="text-xs font-bold uppercase p-1">
+                          {v.id} ({v.modelo}) <br/>
+                          <span className={isNearest ? 'text-indigo-600 font-black' : 'text-slate-500'}>
+                             {isNearest ? '🎯 MELHOR OPÇÃO (RADAR)' : 'Frota Disponível'}
+                          </span>
+                       </div>
+                    </Popup>
+                 </Marker>
+              </React.Fragment>
+           );
+        })}
+
+        {/* Menu de Contexto do Gestor (Leaflet Popup nativo) */}
+        {edgeContextMenu && (
+           <Popup
+              position={[edgeContextMenu.lat, edgeContextMenu.lng]}
+              eventHandlers={{ remove: () => setEdgeContextMenu(null) }}
+           >
+              <div className="min-w-[200px] -m-2">
+                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 px-1">📍 Via {edgeContextMenu.edgeId}</p>
+                 <div className="flex flex-col space-y-1">
+                    <button 
+                       onClick={() => { setSelectedEdgeForReport({ edgeId: edgeContextMenu.edgeId, lat: edgeContextMenu.lat, lng: edgeContextMenu.lng }); setEdgeContextMenu(null); }}
+                       className="w-full text-left px-3 py-2 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-bold transition-colors border border-amber-200"
+                    >⚠️ Reportar Ocorrência</button>
+                    <button 
+                       onClick={() => { splitEdge(edgeContextMenu.edgeId, edgeContextMenu.lat, edgeContextMenu.lng); setEdgeContextMenu(null); }}
+                       className="w-full text-left px-3 py-2 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition-colors border border-indigo-200"
+                    >➕ Inserir Novo Nó</button>
+                    <button 
+                       disabled
+                       className="w-full text-left px-3 py-2 rounded-lg bg-slate-50 text-slate-400 text-xs font-bold border border-slate-200 cursor-not-allowed opacity-60"
+                    >⚙️ Configurações da Via</button>
+                 </div>
+              </div>
+           </Popup>
+        )}
       </MapContainer>
 
-      {/* Report Modal */}
+      {/* Report Modal (Operador/Motorista — ou Gestor via Menu de Contexto) */}
       {selectedEdgeForReport && (
-         <div className="absolute top-0 left-0 w-full h-full z-[9999] flex items-center justify-center bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm">
+         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm">
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 rounded-xl shadow-2xl w-80 text-slate-800 dark:text-white transition-colors duration-300">
                <h3 className="font-bold text-lg mb-1 flex items-center">
                  <span className="text-yellow-500 mr-2">⚠️</span> Alerta de Condição
                </h3>
-               <p className="text-slate-500 dark:text-gray-400 text-xs mb-4">Selecione o estado do trecho <span className="font-bold text-indigo-400">{selectedEdgeForReport}</span>.</p>
+               <p className="text-slate-500 dark:text-gray-400 text-xs mb-4">Selecione o estado do trecho <span className="font-bold text-indigo-400">{selectedEdgeForReport.edgeId}</span>.</p>
                
                <div className="grid grid-cols-1 gap-2 mb-4">
                   <button onClick={() => submitReport('normal')} className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 py-3 rounded text-sm transition font-bold shadow-sm dark:shadow-lg">✅ Liberada (Normal)</button>

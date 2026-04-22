@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import MapComponent from '../components/MapComponent';
+import FollowCameraButton from '../components/FollowCameraButton';
 import { useGraph } from '../context/GraphContext';
 import { useAuth } from '../context/AuthContext';
 
@@ -7,7 +8,7 @@ const Gestor = () => {
   const { 
      nodes, originalEdges, addNode, updateNode, deleteNode, activeNodeId, setActiveNodeId, 
      selectedNodes, deleteMultipleNodes, pendingAlerts, updateEdgeStatus, rejectAlert, 
-     edgeStatuses, tripHistory, auditLogs, simulationSpeed, setSimulationSpeed,
+     edgeStatuses, removeEdgeEvent, tripHistory, auditLogs, simulationSpeed, setSimulationSpeed,
      categories, setCategories, vehicles, setVehicles, operatorAlerts, ackOperatorAlert, importData
   } = useGraph();
   
@@ -32,6 +33,12 @@ const Gestor = () => {
 
   const [sidebarWidth, setSidebarWidth] = useState(380);
   const [isDragging, setIsDragging] = useState(false);
+  const [expandedAlerts, setExpandedAlerts] = useState({});
+  const [followMode, setFollowMode] = useState(false);
+
+  const toggleAlertExpand = (edgeId) => {
+     setExpandedAlerts(prev => ({...prev, [edgeId]: !prev[edgeId]}));
+  };
 
   useEffect(() => {
      const handleMouseMove = (e) => {
@@ -225,7 +232,8 @@ const Gestor = () => {
     <div className="absolute inset-0 flex overflow-hidden bg-white dark:bg-slate-900 transition-colors">
        
        <div className="w-full h-full relative z-0 pt-16">
-         <MapComponent isGestor={true} />
+         <MapComponent isGestor={true} followMode={followMode} onFollowDisable={() => setFollowMode(false)} />
+          <FollowCameraButton followMode={followMode} onToggle={() => setFollowMode(!followMode)} />
        </div>
 
        {/* Centro de Controle de Alertas (Top Left) */}
@@ -234,7 +242,10 @@ const Gestor = () => {
          {/* Drawer Header */}
          <div className="flex justify-between items-center cursor-pointer mb-2" onClick={() => setIsAlertPanelOpen(!isAlertPanelOpen)}>
             <h2 className="text-xl font-bold flex items-center text-red-400">
-               <span className="mr-2">🚨</span> Centro de Controle
+                <span className="mr-2">🚨</span> Centro de Controle
+                {pendingAlerts.length > 0 && !isAlertPanelOpen && (
+                   <span className="ml-2 inline-flex items-center justify-center w-5 h-5 text-[10px] font-black text-white bg-red-500 rounded-full animate-pulse shadow-lg shadow-red-500/50">{pendingAlerts.length}</span>
+                )}
             </h2>
             <svg className={`w-5 h-5 text-gray-400 transition-transform duration-300 ${isAlertPanelOpen ? 'rotate-180' : 'rotate-0'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
          </div>
@@ -274,13 +285,13 @@ const Gestor = () => {
                          <div className="flex justify-between items-center mb-1">
                            <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-300 uppercase">{alert.reportedBy}</span>
                            <div className="flex space-x-1">
-                              <button onClick={() => updateEdgeStatus(alert.edgeId, alert.status)} className="p-1 bg-green-600/80 hover:bg-green-500 rounded text-white transition shadow" title="Aprovar direto">✓</button>
+                              <button onClick={() => updateEdgeStatus(alert.edgeId, { id: alert.id, type: alert.status, lat: alert.lat || -2.5647, lng: alert.lng || -44.3725 })} className="p-1 bg-green-600/80 hover:bg-green-500 rounded text-white transition shadow" title="Aprovar direto">✓</button>
                               <button onClick={() => rejectAlert(alert.id)} className="p-1 px-1.5 bg-red-600/80 hover:bg-red-500 rounded text-white transition shadow text-xs font-bold" title="Recusar direto">X</button>
                               <button onClick={() => openEditModal(alert.edgeId, alert.status, true, alert.id)} className="p-1 bg-slate-500 dark:bg-slate-700 hover:bg-slate-600 rounded text-white transition shadow" title="Editar">⚙</button>
                            </div>
                         </div>
                         <p className="text-xs text-slate-700 dark:text-slate-300">
-                           Aresta <strong className="text-slate-900 dark:text-white">{alert.edgeId}</strong>: <strong className="text-orange-600 dark:text-orange-400 uppercase">{alert.status}</strong>
+                           Aresta <strong className="text-slate-900 dark:text-white">{alert.edgeId}</strong>: <strong className="text-orange-600 dark:text-orange-400 uppercase">{typeof alert.status === 'object' ? alert.status.type || 'Evento' : alert.status}</strong>
                         </p>
                      </div>
                   ))}
@@ -295,20 +306,44 @@ const Gestor = () => {
                 </div>
              ) : (
                 <div className="flex flex-col space-y-3">
-                  {Object.entries(edgeStatuses).map(([edgeId, status]) => (
+                  {Object.entries(edgeStatuses).map(([edgeId, status]) => {
+                     const isExpanded = expandedAlerts[edgeId];
+                     const hasEvents = typeof status === 'object' && status !== null && status.events;
+                     const eventCount = hasEvents ? status.events.length : 0;
+                     
+                     return (
                      <div key={edgeId} className="bg-slate-50 dark:bg-slate-800 border-l-4 border-l-red-500 border border-slate-200 dark:border-slate-700 p-3 rounded shadow-md relative group">
-                        <div className="flex justify-between items-center mb-1">
-                           <span className="text-[10px] font-bold text-slate-500 dark:text-gray-400 uppercase">Via Comprometida</span>
+                        <div className="flex justify-between items-center mb-1 cursor-pointer" onClick={() => toggleAlertExpand(edgeId)}>
+                           <span className="text-[10px] font-bold text-slate-500 dark:text-gray-400 uppercase flex items-center">
+                              Via {edgeId}
+                              {hasEvents && (
+                                 <svg className={`w-3 h-3 ml-1 text-slate-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : 'rotate-0'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                              )}
+                           </span>
                            <div className="flex space-x-1">
-                              <button onClick={() => updateEdgeStatus(edgeId, 'normal')} className="p-1 px-1.5 bg-slate-500 dark:bg-slate-700 hover:bg-red-600/80 rounded text-white transition shadow text-xs font-bold" title="Remover Alerta">X</button>
-                              <button onClick={() => openEditModal(edgeId, status, false)} className="p-1 bg-indigo-600/80 hover:bg-indigo-500 rounded text-white transition shadow" title="Editar">✏</button>
+                              <button onClick={(e) => { e.stopPropagation(); updateEdgeStatus(edgeId, 'normal'); }} className="p-1 px-1.5 bg-slate-500 dark:bg-slate-700 hover:bg-red-600/80 rounded text-white transition shadow text-[9px] font-bold" title="Remover Todos os Alertas">Limpar Via</button>
                            </div>
                         </div>
                         <p className="text-xs text-slate-700 dark:text-slate-300">
-                           Aresta <strong className="text-slate-900 dark:text-white">{edgeId}</strong>: <strong className="text-red-500 dark:text-red-400 uppercase">{status}</strong>
+                           <strong className="text-red-500 dark:text-red-400 uppercase">
+                              {hasEvents ? `${eventCount} Ocorrência${eventCount > 1 ? 's' : ''}` : status}
+                           </strong>
                         </p>
+                        
+                        {/* Sub-Accordion para os Eventos */}
+                        {isExpanded && hasEvents && (
+                           <div className="mt-3 flex flex-col space-y-2 border-t border-slate-200 dark:border-slate-700 pt-3">
+                              {status.events.map(ev => (
+                                 <div key={ev.id} className="flex justify-between items-center bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 p-2 rounded shadow-sm">
+                                    <span className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-300 w-full truncate">{ev.type}</span>
+                                    <button onClick={(e) => { e.stopPropagation(); removeEdgeEvent(edgeId, ev.id); }} className="text-[10px] font-bold text-red-500 hover:text-red-700 uppercase bg-transparent ml-2 whitespace-nowrap">Excluir</button>
+                                 </div>
+                              ))}
+                           </div>
+                        )}
                      </div>
-                  ))}
+                     );
+                  })}
                 </div>
              )}
          </div>

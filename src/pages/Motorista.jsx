@@ -1,5 +1,6 @@
 import React from 'react';
 import MapComponent from '../components/MapComponent';
+import FollowCameraButton from '../components/FollowCameraButton';
 import { useGraph } from '../context/GraphContext';
 import { useAuth } from '../context/AuthContext';
 
@@ -16,8 +17,13 @@ const Motorista = () => {
     nextWaypointLabel,
     vehicles,
     driverStatuses,
-    updateDriverStatus
+    updateDriverStatus,
+    uTurnStatus,
+    noPathAlert
   } = useGraph();
+  
+  const [isHudCollapsed, setIsHudCollapsed] = React.useState(false);
+  const [followMode, setFollowMode] = React.useState(true);
   
   const { currentUser } = useAuth();
   
@@ -51,48 +57,94 @@ const Motorista = () => {
            </div>
        </div>
 
+        {/* Toast de U-Turn (Alerta Vermelho) */}
+        <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-[10000] bg-red-600 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center space-x-3 transition-all duration-500 max-w-sm ${uTurnStatus === 'warning' ? 'translate-y-0 opacity-100' : '-translate-y-20 opacity-0 pointer-events-none'}`}>
+           <div className="bg-white/20 p-2 rounded-full">
+              <svg className="w-6 h-6 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+           </div>
+           <div>
+              <h4 className="font-bold text-sm uppercase tracking-wider mb-0.5 text-red-100">⚠️ Alerta da Central</h4>
+              <p className="text-xs font-medium leading-snug">Via bloqueada à frente. Retornando ao ponto seguro para recalcular rota.</p>
+           </div>
+        </div>
+
+        {/* Toast de Rota Normalizada (Feedback Sucesso Verde) */}
+        <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-[10000] bg-emerald-600 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center space-x-3 transition-all duration-500 max-w-sm ${uTurnStatus === 'success' ? 'translate-y-0 opacity-100' : '-translate-y-20 opacity-0 pointer-events-none'}`}>
+           <div className="bg-white/20 p-2 rounded-full">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+           </div>
+           <div>
+              <h4 className="font-bold text-sm uppercase tracking-wider mb-0.5 text-emerald-100">✅ Rota Normalizada</h4>
+              <p className="text-xs font-medium leading-snug">Via liberada! Retomando trajeto original.</p>
+           </div>
+        </div>
+
+        {/* Toast de Veículo Isolado (NoPath) */}
+        <div className={`fixed top-24 left-1/2 transform -translate-x-1/2 z-[10000] bg-slate-900 text-white px-8 py-5 rounded-2xl shadow-[0_0_40px_rgba(239,68,68,0.4)] flex items-center space-x-4 border-2 border-red-500 transition-all duration-700 ${noPathAlert ? 'scale-100 opacity-100 animate-bounce' : 'scale-90 opacity-0 pointer-events-none'}`}>
+           <div className="bg-red-500 p-3 rounded-full shadow-lg shadow-red-500/50">
+              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+           </div>
+           <div>
+              <h4 className="font-black text-lg uppercase tracking-tighter text-red-500 leading-none mb-1">Veículo Isolado</h4>
+              <p className="text-sm font-bold text-slate-300 leading-tight">Rota inexistente para o destino. Aguarde liberação de vias pela central.</p>
+           </div>
+        </div>
+
        {isActive ? (
-         <div className="absolute top-16 left-1/2 transform -translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/90 backdrop-blur-md p-6 rounded-b-3xl shadow-2xl border border-slate-200 dark:border-slate-700 min-w-[380px] flex flex-col items-center transition-colors duration-300">
-           <h2 className="text-sm font-bold mb-4 text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">HUD do Caminhão</h2>
-           
-           <div className="flex w-full justify-between items-center bg-slate-50 dark:bg-slate-800 p-4 rounded-xl mb-6 shadow-sm dark:shadow-inner border border-slate-200 dark:border-slate-700 transition-colors">
-             <div className="flex flex-col items-center w-1/3">
-               <span className="text-[10px] uppercase text-slate-500 font-bold mb-1">Origem</span>
-               <span className="font-bold text-sm text-center text-slate-800 dark:text-gray-200">{nodes[routeStart]?.label || 'Start'}</span>
-             </div>
-             
-             <div className="flex flex-col items-center flex-1 justify-center relative h-full">
-               <div className="w-full h-px bg-slate-300 dark:bg-slate-600 block absolute"></div>
-               <svg className="w-6 h-6 text-indigo-500 relative bg-slate-50 dark:bg-slate-800 px-1 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
-             </div>
+                    <div className={`absolute top-16 left-1/2 transform -translate-x-1/2 z-40 bg-white/95 dark:bg-slate-900/90 backdrop-blur-md p-6 rounded-b-3xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col items-center transition-all duration-500 ease-in-out w-[350px]`}>
+            <div className={`w-full flex justify-between items-center ${isHudCollapsed ? 'mb-2' : 'mb-4'}`}>
+               {!isHudCollapsed && <div className="flex-1"></div>}
+               <h2 className={`text-sm font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-widest text-center transition-all duration-300 whitespace-nowrap ${isHudCollapsed ? 'text-[10px] w-full' : 'flex-1'}`}>
+                  {isHudCollapsed ? 'HUD' : 'HUD do Caminhão'}
+               </h2>
+               <div className="flex-1 flex justify-end">
+                  <button onClick={() => setIsHudCollapsed(!isHudCollapsed)} className="p-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg transition-colors text-slate-500" title={isHudCollapsed ? "Expandir HUD" : "Recolher HUD"}>
+                     <svg className={`w-4 h-4 transform transition-transform duration-300 ${isHudCollapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 15l7-7 7 7"></path></svg>
+                  </button>
+               </div>
+            </div>
+            
+            <div className={`w-full flex flex-col items-center transition-all duration-300 origin-top overflow-hidden ${isHudCollapsed ? 'max-h-0 opacity-0 mb-0' : 'max-h-[500px] opacity-100 mb-6'}`}>
+               <div className="flex w-full justify-between items-center bg-slate-50 dark:bg-slate-800 p-4 rounded-xl mb-6 shadow-sm dark:shadow-inner border border-slate-200 dark:border-slate-700 transition-colors">
+                 <div className="flex flex-col items-center w-1/3">
+                   <span className="text-[10px] uppercase text-slate-500 font-bold mb-1">Origem</span>
+                   <span className="font-bold text-sm text-center text-slate-800 dark:text-gray-200">{nodes[routeStart]?.label || 'Start'}</span>
+                 </div>
+                 
+                 <div className="flex flex-col items-center flex-1 justify-center relative h-full">
+                   <div className="w-full h-px bg-slate-300 dark:bg-slate-600 block absolute"></div>
+                   <svg className="w-6 h-6 text-indigo-500 relative bg-slate-50 dark:bg-slate-800 px-1 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                 </div>
 
-             <div className="flex flex-col items-center w-1/3">
-               <span className="text-[10px] uppercase text-slate-500 font-bold mb-1">Destino</span>
-               <span className="font-bold text-sm text-center text-green-600 dark:text-green-400">{nodes[routeEnd]?.label || 'End'}</span>
-             </div>
-           </div>
-           
-           <div className="w-full bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 mb-6 transition-colors text-left flex flex-col space-y-1">
-              <p className="text-xs text-slate-600 dark:text-gray-300"><strong className="text-slate-800 dark:text-white uppercase">🙋 Solicitado por:</strong> {activeOrder?.solicitadoPor || 'Centro de Comando'}</p>
-              <p className="text-xs text-slate-600 dark:text-gray-300"><strong className="text-slate-800 dark:text-white uppercase">📋 Motivo / Obs:</strong> {activeOrder?.motivo || 'Nenhuma observação informada.'}</p>
-           </div>
+                 <div className="flex flex-col items-center w-1/3">
+                   <span className="text-[10px] uppercase text-slate-500 font-bold mb-1">Destino</span>
+                   <span className="font-bold text-sm text-center text-green-600 dark:text-green-400">{nodes[routeEnd]?.label || 'End'}</span>
+                 </div>
+               </div>
+               
+               <div className="w-full bg-slate-50 dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 mb-6 transition-colors text-left flex flex-col space-y-1">
+                  <p className="text-xs text-slate-600 dark:text-gray-300"><strong className="text-slate-800 dark:text-white uppercase">🙋 Solicitado por:</strong> {activeOrder?.solicitadoPor || 'Centro de Comando'}</p>
+                  <p className="text-xs text-slate-600 dark:text-gray-300"><strong className="text-slate-800 dark:text-white uppercase">📋 Motivo / Obs:</strong> {activeOrder?.motivo || 'Nenhuma observação informada.'}</p>
+               </div>
 
-           {/* Painel do Dijkstra de Segurança */}
-           {activePath.length > 0 && (
-              <p className="text-xs text-center text-slate-500 dark:text-slate-400 mb-6 px-2 leading-relaxed">
-                Algoritmo ativo: {activePath.length} Waypoints calculado restantes. Atualizando Rota na central...
-              </p>
-           )}
+               {/* Painel do Dijkstra de Segurança */}
+               {activePath.length > 0 && (
+                  <p className="text-xs text-center text-slate-500 dark:text-slate-400 mb-2 px-2 leading-relaxed">
+                    Algoritmo ativo: {activePath.length} Waypoints calculado restantes. Atualizando Rota na central...
+                  </p>
+               )}
+            </div>
 
-           <button 
-             onClick={() => setIsMoving(!isMoving)} 
-             className={`w-full py-3 px-6 rounded-xl font-bold shadow-xl transition-all duration-300 transform hover:scale-105 active:scale-95 text-sm uppercase tracking-wide
-              ${isMoving 
-                ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/30' 
-                : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/30'}`}
-           >
-             {isMoving ? 'Pausar Viagem' : 'Iniciar Rota'}
-           </button>
+            <button 
+              onClick={() => setIsMoving(!isMoving)} 
+              className={`w-full py-3 px-6 rounded-xl font-bold shadow-xl transition-all duration-300 transform hover:scale-105 active:scale-95 text-sm uppercase tracking-wide
+               ${isMoving 
+                 ? 'bg-red-500 hover:bg-red-600 text-white shadow-red-500/30' 
+                 : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/30'}
+               ${isHudCollapsed ? 'py-1.5 px-3 text-[10px]' : ''}`}
+            >
+              {isMoving ? (isHudCollapsed ? 'Pausar' : 'Pausar Viagem') : (distanceToNext > 0 || currentSpeed > 0 ? 'Continuar' : 'Começar')}
+            </button>
          </div>
        ) : (
            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-40 bg-white/95 dark:bg-slate-900/90 backdrop-blur-md p-8 rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col items-center min-w-[340px] transition-colors duration-300">
@@ -146,11 +198,18 @@ const Motorista = () => {
           </div>
        )}
 
+       {/* Botão da Câmera Inteligente (Componente Reutilizável) */}
+       {isActive && (
+          <FollowCameraButton followMode={followMode} onToggle={() => setFollowMode(!followMode)} />
+       )}
+
        <div className="w-full h-full relative z-0 pt-16">
-         <MapComponent 
-            isMotorista={true} 
-            overridePath={isActive ? activePath : []} 
-         />
+          <MapComponent 
+             isMotorista={true} 
+             overridePath={isActive ? activePath : []}
+             followMode={followMode}
+             onFollowDisable={() => setFollowMode(false)}
+          />
        </div>
     </div>
   );
